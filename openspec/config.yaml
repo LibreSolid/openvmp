@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  This is a mechanical project. Its parts are machined from parametric
+  source, and this record is their durable design record: what the parts
+  promise each other, and why they are shaped the way they are.
+
+  A capability is an interface between parts, never a part. Name what has to
+  agree between two things — `lid-body-interface`, `shaft-bearing-fit` — not
+  the thing itself.
+
+  A requirement is a measurable guarantee about that interface: a fit, a
+  clearance, a tolerance, a load path, an assembly order.
+
+  A scenario is one fit or assembly test. Each becomes a test in the project,
+  written to fail before the geometry makes it pass.
+
+  Knob values are not design decisions. Parameter schemas, derived
+  relationships, guards, and observable behaviour are.
+
+rules:
+  proposal:
+    - "Name the interfaces the change establishes or alters, not the parts you plan to edit."
+    - "Say what physically goes wrong today; a proposal without a failure is a preference."
+  specs:
+    - "Write a MODIFIED requirement as the complete replacement block, every unchanged line included. Detail you omit is silently lost when the change is archived."
+    - "State every tolerance, clearance, and load with its unit."
+  design:
+    - "Record the alternatives you rejected and the measurement that decided it."
+  tasks:
+    - "Order the work so a failing fit or assembly test exists before the geometry that satisfies it."
+    - "Archiving a new capability writes `Purpose: TBD` into its spec. Replace that line with what the interface is for before you commit: a spec left stamped `Purpose: TBD` records nothing."

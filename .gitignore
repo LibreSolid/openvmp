@@ -5,3 +5,13 @@ build/
 **/.DS_Store
 __pycache__
 
+
+# solid-node simulations (see pyproject.toml)
+_build*/
+.env
+snapshot*.png
+# the blueprints repository, cloned beside the simulations rather than
+# checked out as the `models` submodule
+/openvmp-models/
+# vendor geometry the simulations fetch from the PartCAD index
+/simulation/*/vendor/

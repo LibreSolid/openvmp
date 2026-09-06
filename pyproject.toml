@@ -1,0 +1,11 @@
+# solid-node simulations of the OpenVMP robots, one model per robot.
+# Each lives under simulation/<robot>/ as a thin layer over the PartCAD
+# blueprints in openvmp-models/, which it reads rather than redraws.
+[tool.solid-node]
+model = "don1"
+
+[tool.solid-node.models]
+don1 = "simulation.don1.robot:Don1"
+
+[tool.libresolid-studio]
+profile = "builder"
