@@ -1,20 +1,22 @@
 """Clearance between the links of the robot, measured on the meshes.
 
-The framework's own interference assertion refuses a part whose STL is
-not one closed volume, and twenty-one of the index's parts are not: a
-bearing's balls touch its races, a board's components touch the board, a
-servo's or a wheel's faces do not quite meet. Envelopes would fill their
-bores and fake every shaft fit. So the robot's motion contract is
-measured here instead: two parts of *different* links must never share
-volume, at any pose. Parts of one link never move relative to each
+The robot's motion contract is that two parts of *different* links never
+share volume, at any pose. Parts of one link never move relative to each
 other; what the blueprint overlaps within a link is its static placement,
-reported by ``rest_overlaps`` and not a question about motion.
+reported by ``rest_overlaps`` and not a question about motion. The
+framework's whole-model interference assertion asks a different
+question -- no two solids anywhere share volume -- which the blueprint's
+own 379 within-link overlaps answer before any link moves; and four of
+the index's parts (a bearing collar, the rubber wheel, the SBC board, a
+servo side) tessellate to meshes the mesh engine refuses even now that
+the framework lets it judge for itself and exports without degenerate
+triangles. So the contract is measured here, across links.
 
-Each piece's mesh is repaired for the check only: degenerate and
-duplicate triangles dropped, vertices merged, then split into bodies
-along manifold edges (touching shells come apart), and a body that still
-is not closed is replaced by its convex hull, recorded in ``HULLED`` as
-the check runs. Bodies are compared as Manifolds, pairwise across links,
+Each piece's mesh is prepared for the check only: duplicate triangles
+dropped, vertices merged, then split into bodies along manifold edges
+(touching shells come apart); each body is offered to the engine, and one
+it refuses is replaced by its convex hull, recorded in ``HULLED`` as the
+check runs. Bodies are compared as Manifolds, pairwise across links,
 after a bounding-box broad phase.
 """
 
@@ -48,7 +50,6 @@ def repaired_bodies(stl_file):
     if cached is not None:
         return cached
     mesh = trimesh.load(stl_file, force='mesh')
-    mesh.update_faces(mesh.nondegenerate_faces())
     mesh.update_faces(mesh.unique_faces())
     mesh.remove_unreferenced_vertices()
     mesh.merge_vertices()
@@ -58,7 +59,7 @@ def repaired_bodies(stl_file):
     for body in mesh.submesh(components, only_watertight=False, repair=False):
         if len(body.faces) < 4:
             continue
-        manifold = _manifold_of(body) if body.is_volume else None
+        manifold = _manifold_of(body)
         if manifold is None:
             hulled += 1
             manifold = manifold3d.Manifold.hull_points(

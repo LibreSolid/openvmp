@@ -133,8 +133,8 @@ model is Don1, at `simulation/don1/`; the project manifest is
     python -m simulation.don1.catalogue fetch            # the vendor STEP files, once
     solid build                                          # publish the model
     solid develop                                        # the live viewer
-    solid test --faceted simulation/don1/robot.py:Don1   # the contracts
-    solid test --exact simulation/don1/robot.py:Don1     # the certified run
+    solid test --faceted simulation/don1/robot.py        # the contracts
+    solid test --exact simulation/don1/robot.py          # the certified run
 
 The catalogue parts come from the same PartCAD index packages the
 blueprints import, as their STEP files, pinned by commit in

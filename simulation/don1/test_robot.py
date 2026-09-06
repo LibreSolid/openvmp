@@ -4,8 +4,9 @@ Placement is judged against an independent composition of the blueprint's
 own locations; every joint against the axis its bearings define; every
 pose against what it must achieve on the meshes; and motion against the
 clearance engine in ``clearance.py``, which compares parts of different
-links because the framework's own interference assertion cannot ingest
-twenty-one of the index's parts (see the design record).
+links only: the blueprint's own within-link overlaps are its placements,
+not motion, and four of the index's parts are meshes the engine refuses
+(see ``clearance.py``).
 
 Every number a contract expects is written here from the blueprint files
 and the design, never read off the model.
