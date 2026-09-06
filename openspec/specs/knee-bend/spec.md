@@ -1,5 +1,9 @@
-## ADDED Requirements
+# knee-bend Specification
 
+## Purpose
+The knee stepper bending the foot about the knee shaft through the knee worm drive, with the blueprint's rest bend and its 11.5 mm nesting offset recorded.
+
+## Requirements
 ### Requirement: The foot bends about the knee shaft
 The root SHALL declare a driver per leg, `<front|rear>_<left|right>_knee`
 (degrees, default 39, range -162 to 126 as the ROS description limits
@@ -18,7 +22,7 @@ that offset is the blueprint's and SHALL be recorded, not corrected.
 
 #### Scenario: Bending about the shaft
 - **WHEN** `front_left_knee` is 0 and every other driver is at its default
-- **THEN** the front-left wheel axis has swung about the knee shaft axis so that the wheel's centre lies within 0.1 mm of the point given by rotating its rest centre (512, 485.67, -171.4) mm by -39° about the X axis through (·, 316.4, 71.8) mm
+- **THEN** the front-left wheel has swung about the knee shaft so that its origin lies within 0.1 mm of the point given by unbending its rest origin (512, 485.67, -171.4) mm by 39° about the X axis through (·, 316.4, 71.8) mm
 
 ### Requirement: The knee worm drive turns with the bend
 The knee worm gear SHALL turn with the foot, the knee worm about its own
@@ -28,3 +32,4 @@ angle times 16/16.
 #### Scenario: The knee worm spins
 - **WHEN** `front_left_knee` moves from 39 to 49
 - **THEN** the front-left knee worm has turned 280° about its own axis and stays within 0.05 mm of its rest bounding-box centre
+

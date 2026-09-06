@@ -118,3 +118,35 @@ See the following documents for more info:
 - [Included ROS2 packages](docs/ROS2_packages.md)
 - [Roadmap](docs/Roadmap.md)
 - [License](docs/License.md)
+
+## Simulation
+
+`simulation/` holds solid-node models of the robots, one per robot, a
+thin layer over the PartCAD blueprints in `openvmp-models/` (cloned
+beside it): every part sits where the `.assy` files put it, and the layer
+adds only what those files have no notation for — which links move, about
+which axes, driven by what — plus the poses the robot takes. The first
+model is Don1, at `simulation/don1/`; the project manifest is
+`pyproject.toml` at the repository root.
+
+    pip install "solid-node[viewer]"                     # or the workspace venv
+    python -m simulation.don1.catalogue fetch            # the vendor STEP files, once
+    solid build                                          # publish the model
+    solid develop                                        # the live viewer
+    solid test --faceted simulation/don1/robot.py:Don1   # the contracts
+    solid test --exact simulation/don1/robot.py:Don1     # the certified run
+
+The catalogue parts come from the same PartCAD index packages the
+blueprints import, as their STEP files, pinned by commit in
+`simulation/don1/catalogue.py` and fetched into the ignored
+`simulation/don1/vendor/`. Nothing under `openvmp-models/` is edited.
+
+The viewer shows one slider per motor — `front_yaw`, `front_roll`,
+`front_left_thigh`, `front_left_knee`, `front_left_wheel`,
+`front_left_pan`, `front_left_tilt` and their kin, joint angles in
+degrees — and a button per pose: the blueprint's `Rest`, the upstream
+motion scripts' `Stand`, `Hug` and `Walk` stance, `Crouch`, `Duct` (the
+hips rolled so that level wheels press floor and ceiling), `TurnLeft`,
+`TurnRight`, `Roll` and `Look`. The design record for the simulation,
+including what the blueprint gets wrong and what the framework cannot
+yet check, is under `openspec/`.

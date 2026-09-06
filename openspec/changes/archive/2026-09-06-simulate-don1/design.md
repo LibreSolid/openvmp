@@ -161,18 +161,94 @@ knee zero coincides with the blueprint's unbent foot (its hook sits at
 the blueprint's hook position) and its `stand2` knee of 0.7 rad is the
 blueprint's 39° rest bend, so the scripts' angles carry over as absolute
 joint angles here with the sign each side's frame gives. What each pose
-must achieve — Stand on the wheels with level axes, Rest on the hooks,
-Hug with the feet folded back — is asserted on the meshes, so a sign
-error shows as a failed outcome rather than a wrong number that looks
-right.
+must achieve — Stand lifting the body onto vertical feet, Rest on the
+hooks, Hug with the feet folded back — is asserted on the meshes, so a
+sign error shows as a failed outcome rather than a wrong number that
+looks right.
 
-**Interference is asserted with the blueprint's own overlaps listed.**
-The blueprint places spacers, bearings and hubs by hand and some of them
-share volume at rest; `test_robot.py` asserts no interference over the
-whole robot along every instruction with the faceted kernel, and lists
-the rest overlaps found, asserting each is present so a corrected
-blueprint is noticed. The list is populated by the first build and
-recorded here in the implementation commit.
+**No pose in this blueprint rolls on level wheels; `Duct` is the
+nearest.** With the hips level no bend of the knees puts the wheels
+under the robot with their axes horizontal: the wheel sits at the corner
+of the L-shaped foot, so its axis is level only when the foot's long
+segment is level, and then the wheel hangs 37 mm above the base's
+underside (thighs 180°, knees 0°: rims at -131 mm, base at -168 mm). The
+upstream Stand (knees -90°) has rims and hook tips together at -454 mm
+with the wheels flat. Rolling a hip a quarter turn points one thigh down
+and the other up, and a scan of the knee from -180° to 180° on the down
+leg finds the wheel lowest only between 0° and 75° of bend, cambered by
+90° minus the bend: at 90°, where the axis is level, the thigh's own
+knee-end channel reaches 48 mm below the rim. And the clearance sweep
+finds the foot's main channel fouling the thigh's knee motor from 50° of
+bend on (the ROS description allows 126°), so the usable bend ends at
+45°. `Duct` therefore rolls the front hip -90° and the rear +90° with
+every knee at 45°: one wheel per end presses the floor at -560 mm and
+the other a ceiling, all cambered 45°, front thighs at 0° and rear at
+180° so the two floor wheels sit on opposite sides of the centre line.
+The design says this rather than pretending a level four-wheel stance
+exists.
+
+**Clearance is measured between links, by the project, because the
+framework cannot ingest these parts.** The framework's spatial
+assertions refuse any part whose STL is not one closed volume, even on
+the exact kernel, and twenty-one of the sixty-seven pieces are not:
+where a bearing's balls touch its races or a board's components touch
+the board the merged mesh is non-manifold, and the stepper, the servo,
+the wheel, the worm, the REX shafts, the standoff, the gearbox housing
+and a few NUC bodies tessellate with degenerate or unshared triangles.
+No B-rep repair tried (ShapeFix, sewing at 0.01–0.5 mm, unifying
+domains, fusing the bodies) closed them, and a convex envelope would
+fill every bore and fake every shaft fit. So `clearance.py` measures the
+motion contract itself: for the check only, each artifact's mesh is
+cleaned (degenerate and duplicate triangles dropped, vertices merged),
+split into bodies along manifold edges so touching shells come apart,
+and a body that still is not closed is replaced by its convex hull; the
+bodies become Manifolds and every pair of parts from *different* links
+with overlapping boxes is intersected. Parts of one link never move
+relative to each other, so what they share is the blueprint's static
+placement, not a question about motion. Nine artifacts have hulled
+bodies: the servo, the wheel, the worm, the 6 mm set collar, the hyper
+hub, the gearbox, the NUC, the brushless driver and the battery.
+
+**The blueprint's rest overlaps are recorded and asserted.** Across
+links, at rest, 44 pairs share volume, all of them a part on a joint
+shaft or the knee offset above: each turntable's REX shaft, its last
+spacer and the gear shaft's bearing, clip and shaft in the hub, gearbox,
+mount and attachment across the turntable joint (6 per end); each
+thigh's radial-load shaft and last spacer in the hip's hyper hub, each
+knee shaft in the foot's two sonic hubs and two flat brackets it misses
+by 11.5 mm, and each camera's servo spline in its hub and its arm (8 per
+side). `test_robot.py` asserts exactly that set at rest, and the
+scenario sweep asserts that no pair outside it appears at any sample
+along the instructions, sampled every 0.5 s; a pose that must collide
+(the front hip rolled 90° with the left foot folded back into the hip
+channel) is asserted to be caught. Within links the blueprint overlaps
+379 pairs, the largest being two stepper drivers placed through the
+battery (9.7 and 9.4 cm³), each thigh's channel through its motor mount
+(1.8 cm³), the eight drivers through the bottom board (1.1 cm³ each) and
+every servo through its frame (0.85 cm³, partly the servo's hull); they
+are the blueprint's and are reported, not asserted.
+
+**Parts carry a coarser angular tessellation.** At the framework's
+0.1 mm and 0.1 rad the robot's STLs came to 202 MB; storing a
+triangulation on each shape at 0.1 mm and 0.5 rad, which the export
+reuses, keeps the linear precision and cuts the size to a quarter.
+
+## Evidence
+
+Mutation checks run against the built model, each mutation in node code:
+
+- The knee pivoted at the nesting origin instead of the shaft: caught by
+  the knee-bend contract (the wheel's origin misses its predicted point);
+  the default-bend contract is blind to it by design, since at the rest
+  bend both pivots give the blueprint's pose.
+- The roll sense flipped: caught by the knee-shaft-axis contract (669 mm
+  off); the hub-on-axis contract is blind, since a hub centred on the
+  axis stays put in either sense.
+- The yaw applied about a point 30 mm off the disc centre: caught by the
+  yaw contract.
+- A 14-tooth worm gear instead of 28: caught by both worm-spin contracts.
+- The camera tilted about Y instead of its own X: caught by the
+  tilt-follows-pan contract.
 
 ## Risks / Trade-offs
 
@@ -192,6 +268,43 @@ recorded here in the implementation commit.
   path this workspace uses; `.gitignore` lists it. Pointing at the
   submodule path instead is a one-line change if the pilot initializes
   it.
+
+## Findings in the blueprint, for OpenVMP
+
+- `robot.assy` nests each foot 11.5 mm short of the thigh's knee shaft
+  (the knee decision above); at rest the shaft passes through the foot's
+  sonic hubs and flat brackets.
+- The base's `motion-*-worm-collar` is placed on the gear shaft (its bore
+  on the yaw axis), not on the worm shaft its name says; simulated as a
+  gear-shaft part.
+- The foot fouls the thigh's knee motor from 50° of bend; nothing puts a
+  level wheel on the floor (see `Duct`).
+- A direct ramp from `Crouch` (thighs 180°) to `Hug` (thighs 0°) swings
+  the front and rear feet through the body's centre, where the hooks
+  meet; the scenario routes such moves through `Rest`.
+- The camera channel fouls the hip's vision beams when panned outward
+  and tilted down, and the servo arm fouls the base's servo frame beyond
+  about 30° of tilt; `Look` pans the cameras 45° inward and tilts them
+  30° up, which is clear.
+- Within links, 379 overlapping placements, the drivers through the
+  battery and the motor mounts through the thigh channels the largest.
+- Two stepper drivers are placed through the battery (9.7 and 9.4 cm³).
+
+## Findings for the framework
+
+Recorded here for the shop to file as warts, not fixed in this change:
+
+- The spatial assertions' watertight gate rejects bought parts as
+  imported, and there is no project-level hook to repair a mesh on an
+  exact leaf; `StlNode.adjust()` exists but takes one body only.
+- The exact leaf's STL export keeps degenerate triangles (the fusion
+  path removes them), so a valid solid can fail the gate on its own.
+- Tessellation precision is not declarable per node; a bought part
+  cannot ask for less than the framework's angular deflection.
+- `solid test` on a bare file path builds every node class the file
+  defines, so a sub-assembly that only works under its parent (ports
+  bound by the parent) makes the whole file untestable by path; the
+  class must be named in the reference.
 
 ## Open Questions
 

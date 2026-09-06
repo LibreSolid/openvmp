@@ -7,7 +7,14 @@ on it about the axis the thigh's radial-load-support bearings define: the
 side frame's Y axis through the hip's thigh hub, which for the front-left
 leg is the world Y axis through (512, ·, -37) mm. The thigh's bearings
 SHALL stay on that axis within 0.2 mm at every angle, and the four legs
-SHALL turn in the same sense relative to their own hips.
+SHALL turn in the same sense relative to their own hips: a positive
+angle turns both legs of a hip about the hip's Y axis the same way, as
+the ROS description's `arm` joints do, so the rear hip, turned 180°,
+swings its feet the opposite way along the body.
+
+#### Scenario: One angle, four legs
+- **WHEN** every thigh is 60
+- **THEN** the two hooks of each hip have moved the same distance along the body within 0.1 mm and risen equally, and the front hip's hooks moved the opposite way to the rear hip's
 
 #### Scenario: A half turn brings the foot under the body
 - **WHEN** `front_left_thigh` is 180 and every other driver is at its default
