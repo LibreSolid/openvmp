@@ -3,28 +3,20 @@
 import os
 
 import cadquery as cq
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
-from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from solid_node.node import CadQueryNode
+from solid_node.node.adapters.step import solids_from_faces
 
 from simulation.don1 import catalogue, materials
 
 #: How far apart two edges of a face-only STEP may be and still be sewn.
 SEWING_TOLERANCE = 0.05
 
-#: The tessellation the parts carry into the build: the framework's own
-#: 0.1 mm linear deflection, at an angular deflection of 0.5 rad rather
-#: than its 0.1. Vendor STEP files are all fillets and threads, and at
-#: 0.1 rad the robot's meshes came to 200 MB; a triangulation stored on
-#: the shape at the same linear precision is what the export writes.
-MESH_DEFLECTION = 0.1
-MESH_ANGLE = 0.5
-
-
-def premesh(shape):
-    """Store a triangulation on ``shape`` for the export to reuse."""
-    BRepMesh_IncrementalMesh(shape.wrapped, MESH_DEFLECTION, False, MESH_ANGLE, True)
-    return shape
+#: Vendor STEP files are all fillets and threads, and at the framework's
+#: 0.1 rad angular deflection the robot's meshes came to 200 MB. Every
+#: part declares this instead (ADR-077): the export meshes once, at the
+#: declared precision, and the stored-triangulation workaround this module
+#: used to carry is gone.
+ANGULAR_DEFLECTION = 0.5
 
 
 def import_step(path, part_id):
@@ -36,28 +28,14 @@ def import_step(path, part_id):
     return cq.importers.importStep(path)
 
 
-def solids_from_faces(shape):
-    """Sew a shape that holds only faces into one solid per closed shell.
-
-    The hook and the battery come as triangulated surfaces; a solid is what
-    the kernel can intersect and measure, so each closed shell becomes one.
-    """
-    sewing = BRepBuilderAPI_Sewing(SEWING_TOLERANCE)
-    sewing.Add(shape.wrapped)
-    sewing.Perform()
-    sewn = cq.Shape.cast(sewing.SewedShape())
-    solids = [cq.Solid.makeSolid(shell) for shell in sewn.Shells()]
-    if len(solids) == 1:
-        return solids[0]
-    return cq.Compound.makeCompound(solids)
-
-
 class StepPart(CadQueryNode):
     """One catalogue part, as the index or the blueprints draw it.
 
     Identity is the part id; two placements of one part share an artifact.
     The STEP file joins the tracked sources, so replacing it rebuilds.
     """
+
+    angular_deflection = ANGULAR_DEFLECTION
 
     def __init__(self, part, name=None):
         self.part = part
@@ -70,8 +48,11 @@ class StepPart(CadQueryNode):
         imported = import_step(self.path, self.part)
         shape = imported.val()
         if not shape.Solids():
-            shape = solids_from_faces(shape)
-        return cq.Workplane(obj=premesh(shape))
+            # The hook and the battery come as triangulated surfaces; the
+            # framework's helper sews each closed shell into a solid, and
+            # this project vouches for the tolerance.
+            shape = solids_from_faces(shape, SEWING_TOLERANCE)
+        return cq.Workplane(obj=shape)
 
 
 class SideChannel(CadQueryNode):
@@ -85,6 +66,7 @@ class SideChannel(CadQueryNode):
     PART = catalogue.LOCAL_PACKAGE + ':don1-side-channel'
     CHANNEL = '//pub/robotics/parts/gobilda:structure/u_channel_9'
     color = materials.ALUMINIUM
+    angular_deflection = ANGULAR_DEFLECTION
 
     def __init__(self, name=None):
         self.path = catalogue.step_file(self.CHANNEL)
@@ -104,7 +86,7 @@ class SideChannel(CadQueryNode):
                      .move(0.0, -48.0)
                      .circle(35.0)
                      .cutBlind(next_face))
-        return cq.Workplane(obj=premesh(punctured.val()))
+        return cq.Workplane(obj=punctured.val())
 
 
 def part_node(part_id, name=None):

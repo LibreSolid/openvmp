@@ -119,8 +119,19 @@ def rotate_points(points, angle, direction, on_line):
 
 
 def principal_axis(mesh):
-    components = mesh.principal_inertia_components
-    return mesh.principal_inertia_vectors[np.argmax(components)]
+    """The wheel's axis: the direction its vertices spread least along.
+
+    Read off the vertex cloud, not the volume inertia: the vendor
+    wheel's mesh is not watertight at any tessellation, and trimesh's
+    volume integrals of an open mesh placed away from the origin give
+    garbage (a negative principal component was measured), which is what
+    used to make this pass by luck at one tessellation and fail at the
+    declared 0.5 rad. A disc's least-variance direction is its axis at
+    every tessellation.
+    """
+    centred = mesh.vertices - mesh.vertices.mean(axis=0)
+    eigenvalues, eigenvectors = np.linalg.eigh(centred.T @ centred)
+    return eigenvectors[:, np.argmin(eigenvalues)]
 
 
 def tilt_from_horizontal(direction):
