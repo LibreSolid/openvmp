@@ -10,7 +10,8 @@ sprockets, the shafts the joints ride on -- turn with their joints at
 their ratios.
 """
 
-from solid_node.node import AssemblyNode, RotationalPort
+from solid_node.node import AssemblyNode
+from solid_node.motion.ports import RotationalPort
 from solid_node.parameters import Count
 from solid_node.simulation import Driver, Instruction
 
