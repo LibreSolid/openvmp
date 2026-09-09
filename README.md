@@ -150,3 +150,22 @@ hips rolled so that level wheels press floor and ceiling), `TurnLeft`,
 `TurnRight`, `Roll` and `Look`. The design record for the simulation,
 including what the blueprint gets wrong and what the framework cannot
 yet check, is under `openspec/`.
+
+Don1 moves on solid-node's motion layer
+(`openspec/changes/move-onto-motion/`): seven joints — the two ends'
+`yaw`, each hip's `roll`, each leg's `turn`, each foot's `knee`, each
+wheel's `spin`, each camera's `pan` and each camera arm's `tilt` — one
+declared on the body that has the freedom, axis and anchor stated in its
+parent's frame from the numbers `robot.py` already held. The 24 drivers
+each reach their joint with one `drives` relation from the root, by
+path; the knee's driver is the ROS description's absolute angle, so its
+relation carries an `offset` back to the joint's own bend-past-rest
+coordinate, and every other relation is a plain 1:1 pass-through, the
+handedness living in the joint's own axis rather than in a `± side`
+multiplication. What still turns by hand, in each body's `simulate()`,
+is the drive-train dressing inside the blueprint's own data-driven
+links — worms, worm gears, sprockets, the shafts the joints ride on —
+because those parts are built from `.assy` entries at runtime rather
+than declared in a class body, so no joint or relation can reach them;
+each reads the joint coordinate that drives it and turns at its own
+gear ratio.

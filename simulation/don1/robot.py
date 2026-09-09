@@ -3,19 +3,21 @@
 ``robot.assy`` nests the links of the robot and places them; this module
 writes that nesting as assemblies with the same numbers and adds what the
 blueprint has no notation for: the joints. Each joint turns about the
-axis the blueprint's own bearings define (see the design record), driven
-by one driver per motor on the root, reached through ports down the
-tree. The drive-train parts that visibly turn -- worms, worm gears,
-sprockets, the shafts the joints ride on -- turn with their joints at
-their ratios.
+axis the blueprint's own bearings define (see the design record), and the
+24 drivers on the root reach their coordinates by one ``drives`` relation
+each, straight down the tree by path. The drive-train parts that visibly
+turn -- worms, worm gears, sprockets, the shafts the joints ride on -- are
+placed by ``blueprints.load()`` rather than declared, so they stay
+hand-turned in ``simulate()`` at their ratios, reading the joints' own
+coordinates.
 """
 
 from solid_node.node import AssemblyNode
-from solid_node.motion.ports import RotationalPort
+from solid_node.motion.joints import Revolute
 from solid_node.parameters import Count
 from solid_node.simulation import Driver, Instruction
 
-from simulation.don1.link import Link, axis_of, rotate_about, spin
+from simulation.don1.link import Link, axis_of, spin
 
 # robot.assy: where the links nest, in millimetres and degrees
 END_OFFSET = 272.5          # each turntable group's centre from the base origin
@@ -69,62 +71,67 @@ def _handed(value):
         raise ValueError(f'a hand is 1 or -1, not {value}')
 
 
+class Wheel(Link):
+    """The wheel link, spinning in the foot's bearings."""
+
+    spin = Revolute(axis=(0, -1, 0), at=WHEEL_OFFSET, range=WHEEL_RANGE, unit='deg')
+
+
 class Foot(AssemblyNode):
     """The L-shaped foot: the upper arm with its hook, and the wheel."""
 
     arm = Link('link-upper-arm')
-    wheel = Link('link-wheel')
+    wheel = Wheel('link-wheel')
 
-    spin = RotationalPort(unit='deg')
+    #: The knee, stated in the leg's frame: the knee bearings, the worm
+    #: gear and the shaft's own axis all agree on this line, which is
+    #: not the foot's placed origin (the blueprint's 11.5 mm error).
+    knee = Revolute(axis=(1, 0, 0), at=KNEE_SHAFT, unit='deg')
 
     def render(self):
         self.wheel.rotate(90, X).translate(WHEEL_OFFSET)
-
-    def simulate(self):
-        self.wheel.rotate(self.spin.value, Z)
 
 
 class Leg(AssemblyNode):
     """A thigh and the foot on its knee, in the side frame.
 
-    The thigh is turned about its own length by the hip that holds it (the
-    ``turn`` port only counter-turns the shaft parts the hip keeps); the
-    knee bends the foot about the knee shaft; the wheel spins.
+    The thigh is turned about its own length by the hip that holds it; the
+    knee bends the foot about the knee shaft; the wheel spins. ``side`` is
+    not the joint's own axis, which is the same for both legs in the hip's
+    frame, but the leg's own frame is turned 180 degrees for the left leg,
+    so the thigh's counter-spun clamp shaft needs it.
     """
+
+    side = Count(1, min=-1, max=1)
 
     thigh = Link('link-lower-arm')
     foot = Foot()
 
-    turn = RotationalPort(unit='deg')
-    knee = RotationalPort(unit='deg')
-    wheel = RotationalPort(unit='deg')
+    #: The thigh, stated in the hip's frame: the radial-load bearings put
+    #: the axis along the hip frame's Y through the side frame's origin,
+    #: the same line for both legs.
+    turn = Revolute(axis=(0, -1, 0), at=SIDE_OFFSET, range=THIGH_RANGE, unit='deg')
 
-    #: The knee shaft in the foot's unbent frame: the rest placement is
-    #: rotate(39, X) then translate(FOOT_OFFSET), and simulate() composes
-    #: inside it, so the shaft is carried back through both.
-    @property
-    def knee_pivot(self):
-        import numpy as np
-        from scipy.spatial.transform import Rotation
-        offset = np.asarray(KNEE_SHAFT) - np.asarray(FOOT_OFFSET)
-        return Rotation.from_rotvec(np.radians(-FOOT_REST_BEND) * np.asarray(X)).apply(offset).tolist()
+    def check(self):
+        _handed(self.side)
 
     def render(self):
         self.thigh.translate(THIGH_OFFSET)
         self.foot.rotate(FOOT_REST_BEND, X).translate(FOOT_OFFSET)
 
     def simulate(self):
-        bend = self.knee.value - FOOT_REST_BEND
-        rotate_about(self.foot, bend, X, self.knee_pivot)
-        self.foot.spin = self.wheel
-
         thigh = self.thigh
         # the shaft the hip clamps, its coupler and collar do not turn with
         # the thigh: counter-turn them about the thigh axis, which is the
-        # thigh frame's Y axis (the frame sits on it)
+        # thigh frame's Y axis (the frame sits on it); the turn joint's own
+        # coordinate carries no side term, so this hand-written dressing
+        # applies it
         spin(thigh, ['rls-shaft', 'coupler', 'motion-collar_clamping_8mmREX'],
-             -self.turn.value, axis_of(thigh, 'rls-shaft', *REX_SHAFT_AXIS))
-        # the knee shaft, its worm gear and hub bend with the foot
+             -self.turn.value * self.side, axis_of(thigh, 'rls-shaft', *REX_SHAFT_AXIS))
+        # the knee shaft, its worm gear and hub bend with the foot; the
+        # knee joint's own coordinate is already the bend past the rest
+        # placement
+        bend = self.foot.knee.value
         knee_axis = axis_of(thigh, 'knee-shaft', *REX_SHAFT_AXIS)
         spin(thigh, ['knee-shaft', 'assembly-wormgear/worm-gear', 'assembly-wormgear/hub'],
              bend, knee_axis)
@@ -138,6 +145,25 @@ class Leg(AssemblyNode):
              axis_of(thigh, 'knee-motor-sprocket', *SPROCKET_AXIS))
 
 
+class CameraArm(Link):
+    """The camera link, tilted by the base's servo."""
+
+    #: The tilt, stated in the camera assembly's frame: the sign of both
+    #: the axis and the anchor is the end's handedness (front/rear) times
+    #: the side's (left/right), which only the declaring parent knows, so
+    #: both arguments are callables of the realized node.
+    tilt = Revolute(axis=lambda node: (0.0, -node._hand, 0.0),
+                    at=lambda node: (node._end * node._hand * CAMERA_OFFSET[0],
+                                     CAMERA_OFFSET[1], CAMERA_OFFSET[2]),
+                    range=SERVO_RANGE, unit='deg')
+
+    def __init__(self, assembly, dir, side, name=None):
+        # read by the joint callables above, which resolve at realization,
+        # after these are set and before the joint is resolved
+        self._end, self._hand = dir, side
+        super().__init__(assembly, name=name, dir=side)
+
+
 class Camera(AssemblyNode):
     """A pan-tilt stereo camera: the base on the hip's servo, the camera on
     the base's servo, in the vision frame whose Z is the pan axis."""
@@ -146,9 +172,13 @@ class Camera(AssemblyNode):
     side = Count(1, min=-1, max=1)
 
     base = Link('link-camera-servo', dir=side)
-    camera = Link('link-camera', dir=side)
+    camera = CameraArm('link-camera', dir=dir, side=side)
 
-    tilt = RotationalPort(unit='deg')
+    #: The pan, stated in the hip's frame: the vision assembly's placement
+    #: composed into it, vertical through the vision servo's spline.
+    pan = Revolute(axis=(0, 0, 1),
+                   at=(SIDE_OFFSET[0] + VISION_SPREAD, side * VISION_REACH, VISION_HEIGHT),
+                   range=SERVO_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
@@ -158,10 +188,6 @@ class Camera(AssemblyNode):
         x, y, z = CAMERA_OFFSET
         self.base.rotate(self.side * -180, Z)
         self.camera.rotate(self.side * -90, Z).translate([self.dir * self.side * x, y, z])
-
-    def simulate(self):
-        # the base's servo spline is the camera link's own X axis
-        self.camera.rotate(self.tilt.value, X)
 
 
 class Hip(AssemblyNode):
@@ -174,47 +200,24 @@ class Hip(AssemblyNode):
     dir = Count(1, min=-1, max=1)
 
     link = Link('link-hip')
-    left_leg = Leg()
-    right_leg = Leg()
+    left_leg = Leg(side=1)
+    right_leg = Leg(side=-1)
     left_camera = Camera(dir=dir, side=1)
     right_camera = Camera(dir=dir, side=-1)
 
-    left_thigh = RotationalPort(unit='deg')
-    right_thigh = RotationalPort(unit='deg')
-    left_knee = RotationalPort(unit='deg')
-    right_knee = RotationalPort(unit='deg')
-    left_wheel = RotationalPort(unit='deg')
-    right_wheel = RotationalPort(unit='deg')
-    left_pan = RotationalPort(unit='deg')
-    right_pan = RotationalPort(unit='deg')
-    left_tilt = RotationalPort(unit='deg')
-    right_tilt = RotationalPort(unit='deg')
+    #: The roll, stated in the side's (turntable's) frame: the turntable's
+    #: bearings put the axis along X through the hip group's own origin.
+    roll = Revolute(axis=(1, 0, 0), at=HIP_OFFSET, range=ROLL_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
 
-    def sides(self):
-        return ((1, self.left_leg, self.left_camera), (-1, self.right_leg, self.right_camera))
-
     def render(self):
-        for side, leg, camera in self.sides():
+        for side, leg, camera in ((1, self.left_leg, self.left_camera),
+                                  (-1, self.right_leg, self.right_camera)):
             leg.rotate(90 + 90 * side, Z).translate(SIDE_OFFSET)
             (camera.translate([-side * VISION_SPREAD, -VISION_REACH, VISION_HEIGHT])
              .rotate(90 + 90 * side, Z).translate(SIDE_OFFSET))
-
-    def simulate(self):
-        for name, side, leg, camera in (('left', 1, self.left_leg, self.left_camera),
-                                        ('right', -1, self.right_leg, self.right_camera)):
-            # both legs turn about the hip's own Y axis in one sense, as
-            # the ROS description has it; the left leg's frame is turned
-            # 180 degrees, so its own Y is the hip's -Y
-            turn = getattr(self, f'{name}_thigh').value * side
-            leg.rotate(turn, Y)
-            leg.turn = turn
-            leg.knee = getattr(self, f'{name}_knee')
-            leg.wheel = getattr(self, f'{name}_wheel')
-            camera.rotate(getattr(self, f'{name}_pan').value, Z)
-            camera.tilt = getattr(self, f'{name}_tilt')
 
 
 class Side(AssemblyNode):
@@ -225,21 +228,10 @@ class Side(AssemblyNode):
     turntable = Link('link-turn-table')
     hip = Hip(dir=dir)
 
-    roll = RotationalPort(unit='deg')
-    left_thigh = RotationalPort(unit='deg')
-    right_thigh = RotationalPort(unit='deg')
-    left_knee = RotationalPort(unit='deg')
-    right_knee = RotationalPort(unit='deg')
-    left_wheel = RotationalPort(unit='deg')
-    right_wheel = RotationalPort(unit='deg')
-    left_pan = RotationalPort(unit='deg')
-    right_pan = RotationalPort(unit='deg')
-    left_tilt = RotationalPort(unit='deg')
-    right_tilt = RotationalPort(unit='deg')
-
-    HIP_PORTS = ('left_thigh', 'right_thigh', 'left_knee', 'right_knee',
-                 'left_wheel', 'right_wheel', 'left_pan', 'right_pan',
-                 'left_tilt', 'right_tilt')
+    #: The yaw, stated in the base's frame: the base's two 8 mm REX
+    #: flanged bearings put the axis vertical through this end's centre.
+    yaw = Revolute(axis=(0, 0, 1), at=(dir * END_OFFSET, 0, END_HEIGHT),
+                   range=YAW_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
@@ -248,13 +240,10 @@ class Side(AssemblyNode):
         self.hip.translate(HIP_OFFSET)
 
     def simulate(self):
-        self.hip.rotate(self.roll.value, X)
-        for port in self.HIP_PORTS:
-            setattr(self.hip, port, getattr(self, port))
         # the turntable's shaft, coupler, collar and clip are clamped to
         # the hip and roll with it
         table = self.turntable
-        spin(table, ['shaft', 'shaft-clip', 'coupler', 'collar'], self.roll.value,
+        spin(table, ['shaft', 'shaft-clip', 'coupler', 'collar'], self.hip.roll.value,
              axis_of(table, 'shaft', *REX_SHAFT_AXIS))
 
 
@@ -333,24 +322,49 @@ class Don1(AssemblyNode):
         'Look': Instruction(pose(left_pan=-45.0, right_pan=45.0, tilt=-30.0), duration=2.0),
     }
 
-    SIDE_PORTS = ('roll',) + Side.HIP_PORTS
+    # The 24 drivers reach their coordinates by path, one relation each;
+    # every ratio is 1, the handedness living in the joints' own axes. The
+    # knee's offset carries the driver's absolute ROS angle to the joint's
+    # bend-past-rest coordinate. Written out for the front end; the rear
+    # end is the same, front -> rear.
+    front_yaw.drives(front.yaw)
+    front_roll.drives(front.hip.roll)
+    front_left_thigh.drives(front.hip.left_leg.turn)
+    front_right_thigh.drives(front.hip.right_leg.turn)
+    front_left_knee.drives(front.hip.left_leg.foot.knee, offset=-FOOT_REST_BEND)
+    front_right_knee.drives(front.hip.right_leg.foot.knee, offset=-FOOT_REST_BEND)
+    front_left_wheel.drives(front.hip.left_leg.foot.wheel.spin)
+    front_right_wheel.drives(front.hip.right_leg.foot.wheel.spin)
+    front_left_pan.drives(front.hip.left_camera.pan)
+    front_right_pan.drives(front.hip.right_camera.pan)
+    front_left_tilt.drives(front.hip.left_camera.camera.tilt)
+    front_right_tilt.drives(front.hip.right_camera.camera.tilt)
+
+    rear_yaw.drives(rear.yaw)
+    rear_roll.drives(rear.hip.roll)
+    rear_left_thigh.drives(rear.hip.left_leg.turn)
+    rear_right_thigh.drives(rear.hip.right_leg.turn)
+    rear_left_knee.drives(rear.hip.left_leg.foot.knee, offset=-FOOT_REST_BEND)
+    rear_right_knee.drives(rear.hip.right_leg.foot.knee, offset=-FOOT_REST_BEND)
+    rear_left_wheel.drives(rear.hip.left_leg.foot.wheel.spin)
+    rear_right_wheel.drives(rear.hip.right_leg.foot.wheel.spin)
+    rear_left_pan.drives(rear.hip.left_camera.pan)
+    rear_right_pan.drives(rear.hip.right_camera.pan)
+    rear_left_tilt.drives(rear.hip.left_camera.camera.tilt)
+    rear_right_tilt.drives(rear.hip.right_camera.camera.tilt)
 
     def render(self):
         self.front.translate([END_OFFSET, 0, END_HEIGHT])
         self.rear.rotate(180, Z).translate([-END_OFFSET, 0, END_HEIGHT])
 
     def simulate(self):
-        for end, side in (('front', self.front), ('rear', self.rear)):
-            yaw = getattr(self, f'{end}_yaw')
-            side.rotate(yaw, Z)
-            for port in self.SIDE_PORTS:
-                setattr(side, port, getattr(self, f'{end}_{port}'))
-
-            # the base's drive train for this end: the gear shaft and its
-            # worm gear turn with the table, the worm shaft 28 times as
-            # fast, the two motor sprockets with the chain
-            base = self.base
+        # the base's drive train for each end: the gear shaft and its worm
+        # gear turn with the table, the worm shaft 28 times as fast, the
+        # two motor sprockets with the chain
+        base = self.base
+        for end in ENDS:
             prefix = f'motion-{end}'
+            yaw = getattr(self, f'{end}_yaw')
             # the blueprint's "worm-collar" clamps the gear shaft: its bore
             # is on the yaw axis, not the worm's
             gear_axis = axis_of(base, f'{prefix}-gear-shaft', *REX_SHAFT_AXIS)
