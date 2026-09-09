@@ -113,3 +113,10 @@ and the workspace venv from the repository root; never two suites at once.
       2.3 and 3.1, not a matrix deviation); tests 30/30 at baseline and
       30/30 after, none newly red; no test believed to need a change. Not
       synced or archived; the orchestrator reviews first.
+
+## Review (orchestrator, 2026-09-09)
+
+Diff matches the reviewed proposal; every leaf matrix bit-identical over
+63 poses and 499 leaves; 30/30 green before and after. The changed sign
+of `right_leg.turn`'s coordinate is accepted: the handedness now lives in
+the joint's declared axis, and the placed body is identical. Archived.
