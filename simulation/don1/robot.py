@@ -33,9 +33,12 @@ VISION_REACH = 152.0                  #   (-side * 32.5, -152, 86)
 VISION_SPREAD = 32.5
 CAMERA_OFFSET = (4.125, 13.5, 24.5)   # the camera link in the vision frame, x times dir * side
 
-# link-lower-arm.assy: the knee shaft the foot really turns on, in the side
-# frame -- the knee bearings at y -304.9 in a thigh that sits at -11.5
-KNEE_SHAFT = [0.0, -316.4, 108.8]
+# link-lower-arm.assy: the knee shaft the foot really turns on. Was stated
+# in the side frame (the knee bearings at y -304.9 in a thigh that sits at
+# -11.5); carried into the FOOT's own rest frame for
+# joint-frame-follows-declarer by inverting the foot's rest placement
+# (rotate(FOOT_REST_BEND, X).translate(FOOT_OFFSET)).
+KNEE_SHAFT = [0.0, -8.905712537202675, 7.276041795145978]
 
 # The parts' own axes in their STEP frames, read off the cylindrical
 # faces of the index files (the design record lists the probe).
@@ -74,7 +77,12 @@ def _handed(value):
 class Wheel(Link):
     """The wheel link, spinning in the foot's bearings."""
 
-    spin = Revolute(axis=(0, -1, 0), at=WHEEL_OFFSET, range=WHEEL_RANGE, unit='deg')
+    #: The spin, now stated in the wheel's own rest frame
+    #: (joint-frame-follows-declarer): Foot.render() turns the wheel 90
+    #: degrees about X before placing it, so the bearing line that was -Y
+    #: in the foot's frame is +Z here; the anchor restated Foot.render()'s
+    #: own translation exactly, so it is the wheel's own placed origin now.
+    spin = Revolute(axis=(0, 0, 1), range=WHEEL_RANGE, unit='deg')
 
 
 class Foot(AssemblyNode):
@@ -83,9 +91,12 @@ class Foot(AssemblyNode):
     arm = Link('link-upper-arm')
     wheel = Wheel('link-wheel')
 
-    #: The knee, stated in the leg's frame: the knee bearings, the worm
-    #: gear and the shaft's own axis all agree on this line, which is
-    #: not the foot's placed origin (the blueprint's 11.5 mm error).
+    #: The knee, now stated in the FOOT's own rest frame
+    #: (joint-frame-follows-declarer): the knee bearings, the worm gear
+    #: and the shaft's own axis all agree on this line, which is not the
+    #: foot's own placed origin (the blueprint's 11.5 mm error) --
+    #: KNEE_SHAFT above is the old leg-frame value carried through the
+    #: inverse of the foot's rest placement.
     knee = Revolute(axis=(1, 0, 0), at=KNEE_SHAFT, unit='deg')
 
     def render(self):
@@ -107,10 +118,12 @@ class Leg(AssemblyNode):
     thigh = Link('link-lower-arm')
     foot = Foot()
 
-    #: The thigh, stated in the hip's frame: the radial-load bearings put
-    #: the axis along the hip frame's Y through the side frame's origin,
-    #: the same line for both legs.
-    turn = Revolute(axis=(0, -1, 0), at=SIDE_OFFSET, range=THIGH_RANGE, unit='deg')
+    #: The thigh. The radial-load bearings put the axis along the hip
+    #: frame's Y through the side frame's origin, one physical line for
+    #: both legs -- but Hip.render() turns each leg's own frame 180
+    #: degrees apart (left at Z=180, right at Z=0), so in the leg's own
+    #: rest frame that one line reads oppositely: (0, side, 0).
+    turn = Revolute(axis=lambda node: (0, node.side, 0), range=THIGH_RANGE, unit='deg')
 
     def check(self):
         _handed(self.side)
@@ -148,19 +161,24 @@ class Leg(AssemblyNode):
 class CameraArm(Link):
     """The camera link, tilted by the base's servo."""
 
-    #: The tilt, stated in the camera assembly's frame: the sign of both
-    #: the axis and the anchor is the end's handedness (front/rear) times
-    #: the side's (left/right), which only the declaring parent knows, so
-    #: both arguments are callables of the realized node.
-    tilt = Revolute(axis=lambda node: (0.0, -node._hand, 0.0),
-                    at=lambda node: (node._end * node._hand * CAMERA_OFFSET[0],
-                                     CAMERA_OFFSET[1], CAMERA_OFFSET[2]),
-                    range=SERVO_RANGE, unit='deg')
+    #: The tilt, now stated in the camera link's OWN rest frame
+    #: (joint-frame-follows-declarer): Camera.render() rotates this body
+    #: by +-90 degrees about Z depending on side before placing it, and
+    #: that carries the old parent-frame axis (0, -+1, 0) to the SAME
+    #: line, (1, 0, 0), at all four corners (front/rear x left/right) --
+    #: dir only ever affected the translation, never this rotation -- so
+    #: one literal now covers every site and no callable is needed. The
+    #: anchor restated Camera.render()'s own translation of this body
+    #: exactly, so it is the body's own placed origin now.
+    tilt = Revolute(axis=(1, 0, 0), range=SERVO_RANGE, unit='deg')
 
     def __init__(self, assembly, dir, side, name=None):
-        # read by the joint callables above, which resolve at realization,
-        # after these are set and before the joint is resolved
-        self._end, self._hand = dir, side
+        # dir (front/rear) and side (left/right) are separate positions;
+        # the blueprint only distinguishes left/right, so its own "dir"
+        # parameter (the mirrored STEP variant) is this arm's side, not
+        # its end. Neither is read here any more: the joint above no
+        # longer needs them (its axis is one literal, correct at every
+        # corner).
         super().__init__(assembly, name=name, dir=side)
 
 
@@ -174,11 +192,12 @@ class Camera(AssemblyNode):
     base = Link('link-camera-servo', dir=side)
     camera = CameraArm('link-camera', dir=dir, side=side)
 
-    #: The pan, stated in the hip's frame: the vision assembly's placement
-    #: composed into it, vertical through the vision servo's spline.
-    pan = Revolute(axis=(0, 0, 1),
-                   at=(SIDE_OFFSET[0] + VISION_SPREAD, side * VISION_REACH, VISION_HEIGHT),
-                   range=SERVO_RANGE, unit='deg')
+    #: The pan, vertical through the vision servo's spline. Hip.render()
+    #: turns this body about that same Z line before placing it, so the
+    #: axis is unaffected; the anchor restated Hip.render()'s own
+    #: placement of this body exactly, so it is the body's own placed
+    #: origin now.
+    pan = Revolute(axis=(0, 0, 1), range=SERVO_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
@@ -205,9 +224,12 @@ class Hip(AssemblyNode):
     left_camera = Camera(dir=dir, side=1)
     right_camera = Camera(dir=dir, side=-1)
 
-    #: The roll, stated in the side's (turntable's) frame: the turntable's
-    #: bearings put the axis along X through the hip group's own origin.
-    roll = Revolute(axis=(1, 0, 0), at=HIP_OFFSET, range=ROLL_RANGE, unit='deg')
+    #: The roll: the turntable's bearings put the axis along X through
+    #: the hip group's own origin. Side.render() only translates this
+    #: body (no rotation), so the axis is unchanged, and the anchor
+    #: restated that translation exactly, so it is the body's own
+    #: placed origin now.
+    roll = Revolute(axis=(1, 0, 0), range=ROLL_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
@@ -228,10 +250,13 @@ class Side(AssemblyNode):
     turntable = Link('link-turn-table')
     hip = Hip(dir=dir)
 
-    #: The yaw, stated in the base's frame: the base's two 8 mm REX
-    #: flanged bearings put the axis vertical through this end's centre.
-    yaw = Revolute(axis=(0, 0, 1), at=(dir * END_OFFSET, 0, END_HEIGHT),
-                   range=YAW_RANGE, unit='deg')
+    #: The yaw: the base's two 8 mm REX flanged bearings put the axis
+    #: vertical through this end's centre. Don1.render() turns the rear
+    #: end 180 degrees about that same Z line before placing it, so the
+    #: axis is unaffected at both ends; the anchor restated Don1.render()'s
+    #: own placement of this body exactly at both ends, so it is the
+    #: body's own placed origin now.
+    yaw = Revolute(axis=(0, 0, 1), range=YAW_RANGE, unit='deg')
 
     def check(self):
         _handed(self.dir)
